@@ -47,8 +47,6 @@ void SerialWrapper::handleError()
     QString errorMessage = m_serial->errorString();
     if (errorMessage != "No error")
         emit printReadData(errorMessage.toLocal8Bit());
-    // Close Port
-//    close();
 }
 
 QString SerialWrapper::errorString()
