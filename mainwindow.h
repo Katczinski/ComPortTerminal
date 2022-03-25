@@ -54,6 +54,9 @@
 
 #include <QMainWindow>
 #include <QSerialPort>
+#include <QThread>
+#include "settingsdialog.h"
+#include "serialwrapper.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -66,7 +69,6 @@ class MainWindow;
 QT_END_NAMESPACE
 
 class Console;
-class SettingsDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -77,26 +79,25 @@ public:
     ~MainWindow();
 
 private slots:
-    void openSerialPort();
-    void closeSerialPort();
-    void about();
-    void writeData(const QByteArray &data);
-    void readData();
-
-    void handleError(QSerialPort::SerialPortError error);
-
+    void    openSerialPort();
+    void    closeSerialPort();
+    void    about();
+    void    onConnected(bool isOpen);
+signals:
+    void    openSerialPortMT(const SettingsDialog::Settings& p);
+    void    closeSerialPortMT();
 private:
-    void initActionsConnections();
+    void    initActionsConnections();
+    void    initActionsConnectionsMT();
+    void    showStatusMessage(const QString &message);
 
-private:
-    void showStatusMessage(const QString &message);
-
-    Ui::MainWindow *m_ui = nullptr;
-    QLabel *m_status = nullptr;
-    Console *m_consoleRead = nullptr;
-    Console *m_consoleWrite = nullptr;
-    SettingsDialog *m_settings = nullptr;
-    QSerialPort *m_serial = nullptr;
+    Ui::MainWindow  *m_ui = nullptr;
+    QLabel          *m_status = nullptr;
+    Console         *m_consoleRead = nullptr;
+    Console         *m_consoleWrite = nullptr;
+    SettingsDialog  *m_settings = nullptr;
+    SerialWrapper   *m_worker = nullptr;
+    QThread         *m_thread = nullptr;
 };
 
 #endif // MAINWINDOW_H

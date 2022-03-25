@@ -7,11 +7,13 @@ TEMPLATE = app
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
+    serialwrapper.cpp \
     settingsdialog.cpp \
     console.cpp
 
 HEADERS += \
     mainwindow.h \
+    serialwrapper.h \
     settingsdialog.h \
     console.h
 

@@ -53,22 +53,22 @@
 #include "ui_mainwindow.h"
 #include "console.h"
 #include "settingsdialog.h"
+#include <QDebug>
 
 #include <QLabel>
 #include <QMessageBox>
 
-//! [0]
+Q_DECLARE_METATYPE(SettingsDialog::Settings)
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     m_ui(new Ui::MainWindow),
     m_status(new QLabel),
-    m_settings(new SettingsDialog),
-//! [1]
-    m_serial(new QSerialPort(this))
-//! [1]
+    m_settings(new SettingsDialog)
 {
-//! [0]
     m_ui->setupUi(this);
+    qRegisterMetaType<SettingsDialog::Settings>("SettingsDialog::Settings");
+
     QWidget *centralWidget = new QWidget();
     m_consoleRead = new Console(centralWidget);
     m_consoleWrite = new Console(centralWidget);
@@ -87,34 +87,32 @@ MainWindow::MainWindow(QWidget *parent) :
     m_ui->statusBar->addWidget(m_status);
 
     initActionsConnections();
-
-    connect(m_serial, &QSerialPort::errorOccurred, this, &MainWindow::handleError);
-
-//! [2]
-    connect(m_serial, &QSerialPort::readyRead, this, &MainWindow::readData);
-//! [2]
-    connect(m_consoleWrite, &Console::getData, this, &MainWindow::writeData);
-//! [3]
 }
-//! [3]
+
 
 MainWindow::~MainWindow()
 {
     delete m_settings;
     delete m_ui;
+    emit closeSerialPortMT();
 }
 
-//! [4]
 void MainWindow::openSerialPort()
 {
     const SettingsDialog::Settings p = m_settings->settings();
-    m_serial->setPortName(p.name);
-    m_serial->setBaudRate(p.baudRate);
-    m_serial->setDataBits(p.dataBits);
-    m_serial->setParity(p.parity);
-    m_serial->setStopBits(p.stopBits);
-    m_serial->setFlowControl(p.flowControl);
-    if (m_serial->open(QIODevice::ReadWrite)) {
+    m_worker = new SerialWrapper();
+    m_thread = new QThread(this);
+    m_worker->moveToThread(m_thread);
+    initActionsConnectionsMT();
+    m_thread->start();
+    emit openSerialPortMT(p);
+}
+
+void    MainWindow::onConnected(bool isOpen)
+{
+    const SettingsDialog::Settings p = m_settings->settings();
+
+    if (isOpen) {
         m_consoleWrite->setEnabled(true);
         m_consoleWrite->setLocalEchoEnabled(p.localEchoEnabled);
         m_ui->actionConnect->setEnabled(false);
@@ -124,25 +122,20 @@ void MainWindow::openSerialPort()
                           .arg(p.name).arg(p.stringBaudRate).arg(p.stringDataBits)
                           .arg(p.stringParity).arg(p.stringStopBits).arg(p.stringFlowControl));
     } else {
-        QMessageBox::critical(this, tr("Error"), m_serial->errorString());
-
+        QMessageBox::critical(this, tr("Error"), "Cannot open");
         showStatusMessage(tr("Open error"));
     }
 }
-//! [4]
 
-//! [5]
 void MainWindow::closeSerialPort()
 {
-    if (m_serial->isOpen())
-        m_serial->close();
     m_consoleWrite->setEnabled(false);
     m_ui->actionConnect->setEnabled(true);
     m_ui->actionDisconnect->setEnabled(false);
     m_ui->actionConfigure->setEnabled(true);
     showStatusMessage(tr("Disconnected"));
+    emit closeSerialPortMT();
 }
-//! [5]
 
 void MainWindow::about()
 {
@@ -151,31 +144,6 @@ void MainWindow::about()
                           "use the Qt Serial Port module in modern GUI applications "
                           "using Qt, with a menu bar, toolbars, and a status bar."));
 }
-
-//! [6]
-void MainWindow::writeData(const QByteArray &data)
-{
-    m_serial->write(data);
-}
-//! [6]
-
-//! [7]
-void MainWindow::readData()
-{
-    const QByteArray data = m_serial->readAll();
-    m_consoleRead->putData(data);
-}
-//! [7]
-
-//! [8]
-void MainWindow::handleError(QSerialPort::SerialPortError error)
-{
-    if (error == QSerialPort::ResourceError) {
-        QMessageBox::critical(this, tr("Critical Error"), m_serial->errorString());
-        closeSerialPort();
-    }
-}
-//! [8]
 
 void MainWindow::initActionsConnections()
 {
@@ -186,6 +154,19 @@ void MainWindow::initActionsConnections()
     connect(m_ui->actionClear, &QAction::triggered, m_consoleWrite, &Console::clear);
     connect(m_ui->actionAbout, &QAction::triggered, this, &MainWindow::about);
     connect(m_ui->actionAboutQt, &QAction::triggered, qApp, &QApplication::aboutQt);
+}
+
+void MainWindow::initActionsConnectionsMT()
+{
+    connect(this, &MainWindow::openSerialPortMT, m_worker, &SerialWrapper::open);
+    connect(this, &MainWindow::closeSerialPortMT, m_worker, &SerialWrapper::close, Qt::ConnectionType::BlockingQueuedConnection);
+    connect(m_worker, &SerialWrapper::connectionChange, this, &MainWindow::onConnected);
+    connect(m_worker, &SerialWrapper::printReadData, m_consoleRead, &Console::putData);
+    connect(m_consoleWrite, &Console::getData, m_worker, &SerialWrapper::write);
+    connect(m_worker, &SerialWrapper::endThread, m_thread, &QThread::quit, Qt::ConnectionType::DirectConnection);
+    connect(m_worker, &SerialWrapper::endThread, m_worker, &SerialWrapper::deleteLater);
+    connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
+    connect(this, SIGNAL(destroyed()), m_thread, SLOT(quit()));
 }
 
 void MainWindow::showStatusMessage(const QString &message)
