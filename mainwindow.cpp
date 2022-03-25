@@ -99,6 +99,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::openSerialPort()
 {
+    m_consoleRead->clear();
     const SettingsDialog::Settings p = m_settings->settings();
     m_worker = new SerialWrapper();
     m_thread = new QThread(this);
@@ -134,6 +135,7 @@ void MainWindow::closeSerialPort()
     m_ui->actionDisconnect->setEnabled(false);
     m_ui->actionConfigure->setEnabled(true);
     showStatusMessage(tr("Disconnected"));
+    m_consoleRead->clear();
     emit closeSerialPortMT();
 }
 
